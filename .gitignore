@@ -1,0 +1,17 @@
+# Rust/Cargo build output
+/target/
+
+# Rust compiler and debugger artifacts
+*.rs.bk
+*.pdb
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Local ASR model files can be large and should not be committed
+/assets/models/*
+!/assets/models/README.md
