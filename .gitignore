@@ -15,3 +15,5 @@
 # Local ASR model files can be large and should not be committed
 /assets/models/*
 !/assets/models/README.md
+*.wav
+*.onnx

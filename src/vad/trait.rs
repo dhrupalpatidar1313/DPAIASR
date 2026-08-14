@@ -15,6 +15,9 @@ pub enum VadEvent {
         rms: f32,
         dbfs: f32,
     },
+    SpeechProbability {
+        probability: f32,
+    },
     Utterance {
         id: u64,
         audio: Vec<f32>,
@@ -30,6 +33,14 @@ pub enum VadError {
     InvalidFrameSize { actual: usize, expected: usize },
     #[error("VAD sample rate and frame duration do not produce an integer frame size")]
     InvalidFrameConfiguration,
+    #[error("unsupported sample rate for VAD: {0} Hz")]
+    UnsupportedSampleRate(u32),
+    #[error("model file not found at '{0}'")]
+    ModelNotFound(std::path::PathBuf),
+    #[error("failed to initialize ONNX session: {0}")]
+    SessionInit(String),
+    #[error("ONNX inference failed: {0}")]
+    Inference(String),
 }
 
 pub trait Vad {
