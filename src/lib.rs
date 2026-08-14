@@ -9,4 +9,7 @@ pub use audio::{AudioCapture, AudioCaptureConfig, AudioCaptureError, CaptureEven
 pub use audio::{AudioPreprocessor, PreprocessingConfig};
 pub use core::SessionState;
 pub use platform::Platform;
-pub use vad::{EnergyVad, Vad, VadConfig, VadError, VadEvent, VadState};
+pub use vad::{
+    EnergyVad, SileroVad, SileroVadConfig, UtteranceTracker, Vad, VadConfig, VadError, VadEvent,
+    VadState,
+};
