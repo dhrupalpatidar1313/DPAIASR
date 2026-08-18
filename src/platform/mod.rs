@@ -11,6 +11,20 @@ pub enum Platform {
     Other,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayState {
+    Stopped,
+    Listening,
+    Speaking,
+    Transcribing,
+    Injecting,
+    WaitingForTarget,
+    Orphaned,
+    Stopping,
+    Error,
+    Muted,
+}
+
 impl Platform {
     pub const fn current() -> Self {
         if cfg!(target_os = "windows") {
@@ -20,5 +34,36 @@ impl Platform {
         } else {
             Self::Other
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub mod windows;
+
+#[cfg(target_os = "linux")]
+pub mod linux;
+
+#[cfg(target_os = "windows")]
+pub use windows::target::TargetSnapshot;
+#[cfg(target_os = "windows")]
+pub use windows::hotkey::HotkeyManager;
+#[cfg(target_os = "windows")]
+pub use windows::ui::OverlayUI;
+
+#[cfg(target_os = "linux")]
+pub use linux::target::TargetSnapshot;
+#[cfg(target_os = "linux")]
+pub use linux::hotkey::HotkeyManager;
+#[cfg(target_os = "linux")]
+pub use linux::ui::OverlayUI;
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetSnapshot {}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+impl TargetSnapshot {
+    pub fn current() -> Option<Self> {
+        Some(Self {})
     }
 }

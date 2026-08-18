@@ -75,7 +75,8 @@ impl UtteranceTracker {
             VadState::Silence if is_speech => {
                 self.speech_confirmation += 1;
                 self.pre_roll.push_back(frame.to_vec());
-                while self.pre_roll.len() > self.config.pre_roll_frames {
+                let max_pre_roll = self.config.pre_roll_frames + self.config.start_confirmation_frames;
+                while self.pre_roll.len() > max_pre_roll {
                     self.pre_roll.pop_front();
                 }
                 if self.speech_confirmation >= self.config.start_confirmation_frames {
@@ -87,7 +88,10 @@ impl UtteranceTracker {
             }
             VadState::Silence => {
                 self.speech_confirmation = 0;
-                self.pre_roll.clear();
+                self.pre_roll.push_back(frame.to_vec());
+                while self.pre_roll.len() > self.config.pre_roll_frames {
+                    self.pre_roll.pop_front();
+                }
             }
             VadState::Speaking if is_speech => {
                 self.silent_frames = 0;
