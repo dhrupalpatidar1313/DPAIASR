@@ -41,6 +41,6 @@ fn public_vad_pipeline_emits_an_ordered_utterance() {
         .expect("VAD emits a completed utterance");
 
     assert_eq!(utterance.0, 1);
-    assert_eq!(utterance.2, 3);
+    assert_eq!(utterance.2, 4);
     assert_eq!(utterance.1.len(), frame_size * utterance.2);
 }

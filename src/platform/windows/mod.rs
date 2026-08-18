@@ -1,0 +1,10 @@
+#[cfg(target_os = "windows")]
+pub mod hotkey;
+#[cfg(target_os = "windows")]
+pub mod inject;
+#[cfg(target_os = "windows")]
+pub mod target;
+#[cfg(target_os = "windows")]
+pub mod tray;
+#[cfg(target_os = "windows")]
+pub mod ui;

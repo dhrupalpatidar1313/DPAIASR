@@ -44,12 +44,12 @@ impl Default for SileroVadConfig {
         Self {
             model_path: None,
             sample_rate: 16_000,
-            start_threshold: 0.5,
-            end_threshold: 0.35,
+            start_threshold: 0.45,
+            end_threshold: 0.25,
             start_confirmation_frames: 2,
-            hangover_frames: 10,
+            hangover_frames: 22, // ~704ms of trailing silence before finalizing utterance
             minimum_utterance_frames: 4,
-            pre_roll_frames: 5,
+            pre_roll_frames: 10, // ~320ms pre-roll audio buffer to capture speech onsets
             maximum_utterance_frames: 500,
         }
     }

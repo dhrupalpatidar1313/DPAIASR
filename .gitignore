@@ -17,3 +17,7 @@
 !/assets/models/README.md
 *.wav
 *.onnx
+
+.cargo/
+.agents/
+

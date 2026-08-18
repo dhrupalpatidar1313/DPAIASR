@@ -3,6 +3,12 @@ name = "DPAIASR"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
+default-run = "DPAIASR"
+
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+vulkan = ["whisper-rs/vulkan"]
 
 [dependencies]
 anyhow = "1"
@@ -14,6 +20,23 @@ ndarray = "0.15"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+whisper-rs = { version = "0.16.0", features = ["tracing_backend"] }
+reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+sha2 = "0.10"
+hex = "0.4"
+futures-util = "0.3"
+dirs = "5"
+global-hotkey = "0.8.0"
+enigo = "0.6.1"
+tray-icon = "0.24.2"
+tao = "0.36.0"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_Dwm", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
+arboard = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk4 = "0.8"
+gtk4-layer-shell = "0.3"
 
 [lib]
 name = "dpaiasr"
@@ -21,3 +44,4 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 hound = "3.5"
+tempfile = "3"
