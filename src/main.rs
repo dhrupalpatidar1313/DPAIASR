@@ -35,7 +35,7 @@ fn main() -> Result<()> {
 
     let resolution = BackendResolver::resolve(&BackendResolverConfig {
         preference: BackendPreference::Auto,
-        cpu_threads: 6, // i5-9400F has 6 physical cores, no HT
+        cpu_threads: 6, 
         gpu_device: 0,
     }).map_err(|e| anyhow::anyhow!(e))?;
     info!(backend = ?resolution.backend_kind, reason = %resolution.reason, "backend selected");
@@ -128,9 +128,6 @@ fn run_pipeline<V: Vad + Send + 'static>(
     while !stopping.load(Ordering::Acquire) {
         #[cfg(target_os = "windows")]
         {
-            // Pump the Win32 message queue on the main thread so WM_HOTKEY
-            // messages dispatched by RegisterHotKey are delivered to
-            // GlobalHotKeyEvent::receiver().
             let mut msg = MSG::default();
             unsafe {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).into() {
