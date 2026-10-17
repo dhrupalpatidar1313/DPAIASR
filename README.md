@@ -1,5 +1,7 @@
 # DPAIASR
 
+[![CI](https://github.com/dhrupalpatidar1313/DPAIASR/actions/workflows/ci.yml/badge.svg)](https://github.com/dhrupalpatidar1313/DPAIASR/actions/workflows/ci.yml)
+
 **Private, local voice dictation.** Press a key, speak, and your words are typed into whatever app has focus. Speech recognition runs entirely on your machine with [Whisper](https://github.com/openai/whisper): no cloud, no account, no audio ever leaves your computer.
 
 ## Features
@@ -105,7 +107,7 @@ Small GPUs (about 2 GB of VRAM) are better served by the default `small` model t
 cargo test                       # unit + integration tests
 cargo test --release -- --ignored   # also runs the Whisper transcription test (slow, needs the model)
 ```
-Design notes live in [`docs/`](docs/). Contributions are welcome: please open an issue first for larger changes.
+Design notes live in [`docs/`](docs/). Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Acknowledgements
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) / [whisper-rs](https://github.com/tazz4843/whisper-rs), [Silero VAD](https://github.com/snakers4/silero-vad), [ONNX Runtime](https://onnxruntime.ai) (`ort`), [ashpd](https://github.com/bilelmoussaoui/ashpd), [enigo](https://github.com/enigo-rs/enigo).
