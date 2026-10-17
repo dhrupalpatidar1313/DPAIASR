@@ -70,6 +70,7 @@ sudo pacman -S wtype
 **Build & Run:**
 ```bash
 cargo run --release
+# Options: --model tiny|base|small.en|small|medium   --listen
 ```
 
 ---
@@ -83,7 +84,9 @@ Due to the fragmented nature of Wayland compositors, some desktop environments m
 - **GNOME**: 
   GNOME disables layer-shell and virtual keyboard protocols by default. To get the UI overlay and text injection working, you must install third-party GNOME extensions that enable `wlr-layer-shell` and `wlr-virtual-keyboard`. Otherwise, DPAIASR will gracefully fall back to holding transcribed text in the clipboard (`Alt+C`).
 - **Global Hotkeys Not Working?**: 
-  If the `global-hotkey` library fails to register `Alt+M` via your DE's XDG Desktop Portal, simply bind your compositor's native shortcut to run `dpaiasr --toggle`.
+  The `global-hotkey` library cannot register `Alt+M` on most Wayland sessions. Control the running app from the terminal instead: press `Enter` (or `t`) to toggle listening, `r` to retry, `c` to copy orphaned text. Launch with `--listen` to start in listening mode.
+- **GNOME text injection**: 
+  GNOME has no virtual-keyboard protocol, so DPAIASR cannot type for you there. The transcript is copied to the clipboard instead; press `Ctrl+V` to paste it. The status overlay is also disabled (state changes are logged).
 
 ---
 

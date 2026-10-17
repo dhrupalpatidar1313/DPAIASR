@@ -6,7 +6,9 @@ use crate::session::{SessionId, UtteranceId};
 
 #[cfg(target_os = "windows")]
 use crate::platform::windows::inject::{Injector, InjectError};
-#[cfg(target_os = "windows")]
+#[cfg(target_os = "linux")]
+use crate::platform::linux::inject::{Injector, InjectError};
+
 use crate::platform::TargetSnapshot;
 
 #[derive(Debug, Clone)]
@@ -84,39 +86,41 @@ impl InjectionWorker {
 }
 
 fn run_injection_worker(
-    config: InjectionWorkerConfig,
+    _config: InjectionWorkerConfig,
     receiver: Receiver<InjectionCommand>,
     output: Sender<InjectionResult>,
 ) {
     tracing::info!("Injection worker thread started");
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     let mut injector = match Injector::new() {
         Ok(inj) => inj,
         Err(e) => {
-            tracing::error!("Failed to initialize Windows Injector: {}", e);
+            tracing::error!("Failed to initialize Injector: {}", e);
             return;
         }
     };
 
     let mut waiting_queue: VecDeque<InjectionJob> = VecDeque::new();
     let mut orphaned_queue: VecDeque<InjectionJob> = VecDeque::new();
+    // Held for the worker's lifetime: on Linux the clipboard owner must stay alive to serve the data.
+    let mut clipboard: Option<arboard::Clipboard> = None;
 
     loop {
         match receiver.recv() {
             Ok(InjectionCommand::NewJob(job)) => {
-                #[cfg(target_os = "windows")]
-                process_job_windows(&mut injector, job, &output, config.max_pending, &mut waiting_queue, &mut orphaned_queue);
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                process_job_native(&mut injector, job, &output, _config.max_pending, &mut waiting_queue, &mut orphaned_queue);
+                #[cfg(not(any(target_os = "windows", target_os = "linux")))]
                 process_job_mock(job, &output);
             }
             Ok(InjectionCommand::RetryPending) => {
                 tracing::info!("Manual retry triggered for pending jobs");
                 let jobs: Vec<_> = waiting_queue.drain(..).collect();
                 for job in jobs {
-                    #[cfg(target_os = "windows")]
-                    process_job_windows(&mut injector, job, &output, config.max_pending, &mut waiting_queue, &mut orphaned_queue);
-                    #[cfg(not(target_os = "windows"))]
+                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                    process_job_native(&mut injector, job, &output, _config.max_pending, &mut waiting_queue, &mut orphaned_queue);
+                    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
                     process_job_mock(job, &output);
                 }
             }
@@ -127,19 +131,23 @@ fn run_injection_worker(
             Ok(InjectionCommand::CopyLatestOrphaned) => {
                 if let Some(job) = orphaned_queue.pop_back() {
                     let text = job.transcript.text.clone();
-                    match arboard::Clipboard::new() {
-                        Ok(mut clipboard) => {
-                            if let Err(e) = clipboard.set_text(text.clone()) {
-                                tracing::error!("Failed to copy orphaned transcript to clipboard: {:?}", e);
-                                let _ = output.send(InjectionResult::Failed(job.session_id, job.utterance_id, format!("Clipboard copy failed: {}", e)));
-                            } else {
-                                tracing::info!("Copied orphaned transcript to clipboard: {:?}", text);
-                                let _ = output.send(InjectionResult::CopiedToClipboard(job.session_id, job.utterance_id, text));
+                    if clipboard.is_none() {
+                        match arboard::Clipboard::new() {
+                            Ok(c) => clipboard = Some(c),
+                            Err(e) => {
+                                tracing::error!("Failed to open clipboard: {:?}", e);
+                                let _ = output.send(InjectionResult::Failed(job.session_id, job.utterance_id, format!("Clipboard init failed: {}", e)));
+                                continue;
                             }
                         }
-                        Err(e) => {
-                            tracing::error!("Failed to open clipboard: {:?}", e);
-                            let _ = output.send(InjectionResult::Failed(job.session_id, job.utterance_id, format!("Clipboard init failed: {}", e)));
+                    }
+                    if let Some(c) = clipboard.as_mut() {
+                        if let Err(e) = c.set_text(text.clone()) {
+                            tracing::error!("Failed to copy orphaned transcript to clipboard: {:?}", e);
+                            let _ = output.send(InjectionResult::Failed(job.session_id, job.utterance_id, format!("Clipboard copy failed: {}", e)));
+                        } else {
+                            tracing::info!("Copied orphaned transcript to clipboard: {:?}", text);
+                            let _ = output.send(InjectionResult::CopiedToClipboard(job.session_id, job.utterance_id, text));
                         }
                     }
                 } else {
@@ -153,8 +161,8 @@ fn run_injection_worker(
     tracing::info!("Injection worker thread exiting");
 }
 
-#[cfg(target_os = "windows")]
-fn process_job_windows(
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn process_job_native(
     injector: &mut Injector,
     job: InjectionJob,
     output: &Sender<InjectionResult>,
@@ -215,7 +223,7 @@ fn process_job_windows(
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn process_job_mock(
     job: InjectionJob,
     output: &Sender<InjectionResult>,

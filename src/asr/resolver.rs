@@ -90,6 +90,7 @@ impl BackendResolver {
     }
 
     /// Simple check to see if an NVIDIA driver and device are visible at runtime.
+    #[allow(dead_code)]
     fn try_init_cuda_probe() -> bool {
         std::process::Command::new("nvidia-smi")
             .arg("-L") // Query attached GPUs briefly
