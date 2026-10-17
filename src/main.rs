@@ -40,13 +40,29 @@ fn main() -> Result<()> {
     }).map_err(|e| anyhow::anyhow!(e))?;
     info!(backend = ?resolution.backend_kind, reason = %resolution.reason, "backend selected");
 
+    let cli_model = {
+        let args: Vec<String> = std::env::args().collect();
+        let mut selected = None;
+        for i in 0..args.len() {
+            if (args[i] == "--model" || args[i] == "-m") && i + 1 < args.len() {
+                selected = ModelManagerConfig::from_name(&args[i + 1]);
+                break;
+            }
+        }
+        selected
+    };
+
     let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
     let model_path = rt
         .block_on(async {
-            let mgr_config = match resolution.backend_kind {
-                #[cfg(feature = "cuda")]
-                dpaiasr::asr::backend::AsrBackendKind::Cuda => ModelManagerConfig::default_medium_en(),
-                dpaiasr::asr::backend::AsrBackendKind::Cpu => ModelManagerConfig::default_small_q5_1(), // Or tiny_en, user's call. Let's use small_q5_1 as fallback.
+            let mgr_config = if let Some(cfg) = cli_model {
+                cfg
+            } else {
+                match resolution.backend_kind {
+                    #[cfg(feature = "cuda")]
+                    dpaiasr::asr::backend::AsrBackendKind::Cuda => ModelManagerConfig::default_small_en_q5_1(),
+                    dpaiasr::asr::backend::AsrBackendKind::Cpu => ModelManagerConfig::default_small_en_q5_1(),
+                }
             };
             ModelManager::ensure_model(&mgr_config).await
         })
@@ -114,18 +130,72 @@ fn run_pipeline<V: Vad + Send + 'static>(
 
     info!("microphone capture is running; press Ctrl+C to stop");
     
+    let auto_listen = std::env::args().any(|arg| arg == "--listen" || arg == "-l" || arg == "--auto-start");
+
     let mut session = SessionController::new();
+    if auto_listen {
+        session.set_session(SessionState::Listening);
+        info!("Dictation AUTO-STARTED in LISTENING mode via CLI flag (--listen)");
+    }
+
     let hotkey = HotkeyManager::new().context("failed to register hotkey")?;
     let overlay = OverlayUI::new().context("failed to initialize overlay UI")?;
+    update_overlay(&overlay, &session);
 
     let current_session_id = SessionId(1);
 
     let (inj_tx, inj_rx) = crossbeam_channel::bounded(32);
     let injection_handle = InjectionWorker::spawn(InjectionWorkerConfig::default(), inj_tx);
 
-    info!("Phase 2A Dictation ready: Press Alt+M to toggle listening");
+    let (stdin_tx, stdin_rx) = crossbeam_channel::bounded::<String>(16);
+    std::thread::Builder::new()
+        .name("dpaiasr-stdin".into())
+        .spawn(move || {
+            use std::io::BufRead;
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                if let Ok(cmd) = line {
+                    if stdin_tx.send(cmd).is_err() {
+                        break;
+                    }
+                }
+            }
+        })
+        .ok();
+
+    info!("Dictation ready:");
+    info!("  - Global Hotkey: Alt+M (Toggle), Alt+R (Retry), Alt+C (Copy Orphaned)");
+    info!("  - Terminal Control: Press [Enter] or 't' to Toggle, 'r' to Retry, 'c' to Copy");
+    if !auto_listen {
+        info!("  - Status: Currently STOPPED. Press Alt+M or [Enter] to start listening.");
+    }
 
     while !stopping.load(Ordering::Acquire) {
+        if let Ok(cmd) = stdin_rx.try_recv() {
+            let trimmed = cmd.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("t") || trimmed.eq_ignore_ascii_case("toggle") {
+                let new_session = session.toggle();
+                if new_session == SessionState::Stopped {
+                    session.set_speech(SpeechState::Silent);
+                }
+                update_overlay(&overlay, &session);
+                match new_session {
+                    SessionState::Stopped => info!("Dictation STOPPED (via terminal input)"),
+                    SessionState::Listening => info!("Dictation STARTED (Listening - speak into your mic)"),
+                    _ => {}
+                }
+            } else if trimmed.eq_ignore_ascii_case("r") || trimmed.eq_ignore_ascii_case("retry") {
+                info!("Triggering pending queue retry (via terminal input)");
+                if let Err(e) = injection_handle.retry_pending() {
+                    error!("Failed to send retry command: {:?}", e);
+                }
+            } else if trimmed.eq_ignore_ascii_case("c") || trimmed.eq_ignore_ascii_case("copy") {
+                info!("Copying latest orphaned transcript to clipboard (via terminal input)");
+                if let Err(e) = injection_handle.copy_orphaned_to_clipboard() {
+                    error!("Failed to send copy orphaned command: {:?}", e);
+                }
+            }
+        }
         #[cfg(target_os = "windows")]
         {
             let mut msg = MSG::default();
@@ -200,14 +270,7 @@ fn run_pipeline<V: Vad + Send + 'static>(
                             warn!(error = %e, "ASR queue full; utterance dropped until queue drains");
                         }
                     } else {
-                        debug!("ignored utterance (session inactive)");
-                    }
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        info!("utterance detected ({} samples)", audio.len());
-                        if let Err(e) = asr_handle.enqueue(job) {
-                            warn!(error = %e, "ASR queue full; utterance dropped until queue drains");
-                        }
+                        info!("utterance detected ({} samples), but dictation is STOPPED. Press Alt+M, or press [Enter] in terminal (or launch with --listen) to enable.", audio.len());
                     }
                 }
                 CaptureEvent::Vad(_event) => {} // Suppress noisy debug logs for unhandled VAD events

@@ -11,7 +11,18 @@ pub struct ModelManagerConfig {
 }
 
 impl ModelManagerConfig {
-    /// `ggml-small-q5_1` — higher accuracy, ~53s RTF on i5-9400F (slowest)
+    /// `ggml-small.en-q5_1` — 181 MB, fast, high accuracy, optimal for CPU and entry GPUs (e.g. MX450 / 2GB VRAM)
+    pub fn default_small_en_q5_1() -> Self {
+        Self {
+            model_filename: "ggml-small.en-q5_1.bin".into(),
+            expected_sha256_hex: "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30".into(),
+            download_base_url: "https://huggingface.co/ggerganov/whisper.cpp".into(),
+            revision: "main".into(),
+            cache_dir: Some(std::env::current_dir().unwrap_or_default().join("assets").join("models")),
+        }
+    }
+
+    /// `ggml-small-q5_1` — 181 MB multilingual
     pub fn default_small_q5_1() -> Self {
         Self {
             model_filename: "ggml-small-q5_1.bin".into(),
@@ -22,7 +33,29 @@ impl ModelManagerConfig {
         }
     }
 
-    /// `ggml-tiny.en` — English-only, ~6x faster than small, best for real-time dictation
+    /// `ggml-small.en` — 466 MB FP16 unquantized
+    pub fn default_small_en() -> Self {
+        Self {
+            model_filename: "ggml-small.en.bin".into(),
+            expected_sha256_hex: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d".into(),
+            download_base_url: "https://huggingface.co/ggerganov/whisper.cpp".into(),
+            revision: "main".into(),
+            cache_dir: Some(std::env::current_dir().unwrap_or_default().join("assets").join("models")),
+        }
+    }
+
+    /// `ggml-base.en` — 142 MB, very fast
+    pub fn default_base_en() -> Self {
+        Self {
+            model_filename: "ggml-base.en.bin".into(),
+            expected_sha256_hex: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002".into(),
+            download_base_url: "https://huggingface.co/ggerganov/whisper.cpp".into(),
+            revision: "main".into(),
+            cache_dir: Some(std::env::current_dir().unwrap_or_default().join("assets").join("models")),
+        }
+    }
+
+    /// `ggml-tiny.en` — English-only, ~75 MB, fastest
     pub fn default_tiny_en() -> Self {
         Self {
             model_filename: "ggml-tiny.en.bin".into(),
@@ -33,7 +66,7 @@ impl ModelManagerConfig {
         }
     }
 
-    /// `ggml-medium.en` — High accuracy, English-only, intended for GPU inference.
+    /// `ggml-medium.en` — High accuracy, 1.53 GB (Requires GPU with ≥4GB-6GB VRAM)
     pub fn default_medium_en() -> Self {
         Self {
             model_filename: "ggml-medium.en.bin".into(),
@@ -41,6 +74,18 @@ impl ModelManagerConfig {
             download_base_url: "https://huggingface.co/ggerganov/whisper.cpp".into(),
             revision: "main".into(),
             cache_dir: Some(std::env::current_dir().unwrap_or_default().join("assets").join("models")),
+        }
+    }
+
+    /// Parse model name from CLI argument
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "tiny" | "tiny.en" | "ggml-tiny.en.bin" => Some(Self::default_tiny_en()),
+            "base" | "base.en" | "ggml-base.en.bin" => Some(Self::default_base_en()),
+            "small.en" | "small-en" | "ggml-small.en.bin" => Some(Self::default_small_en()),
+            "small" | "small.en-q5_1" | "small-q5_1" | "small-en-q5_1" | "ggml-small.en-q5_1.bin" => Some(Self::default_small_en_q5_1()),
+            "medium" | "medium.en" | "ggml-medium.en.bin" => Some(Self::default_medium_en()),
+            _ => None,
         }
     }
 }
@@ -144,4 +189,28 @@ async fn compute_sha256(path: &Path) -> Result<String, ModelManagerError> {
         sha2::Digest::update(&mut hasher, &buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_preset_has_a_well_formed_sha256() {
+        for name in ["tiny", "base", "small.en", "small", "medium"] {
+            let cfg = ModelManagerConfig::from_name(name).expect(name);
+            assert_eq!(cfg.expected_sha256_hex.len(), 64, "{name}: not a SHA-256 length");
+            assert!(
+                cfg.expected_sha256_hex.chars().all(|c| c.is_ascii_hexdigit()),
+                "{name}: non-hex characters"
+            );
+        }
+        let q5 = ModelManagerConfig::default_small_q5_1();
+        assert_eq!(q5.expected_sha256_hex.len(), 64);
+    }
+
+    #[test]
+    fn unknown_model_name_is_rejected() {
+        assert!(ModelManagerConfig::from_name("large-v9").is_none());
+    }
 }

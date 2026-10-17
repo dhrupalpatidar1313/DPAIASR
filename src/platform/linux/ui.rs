@@ -32,7 +32,26 @@ fn run_ui_thread(rx: Receiver<OverlayState>) -> anyhow::Result<()> {
     use gtk4::prelude::*;
     use gtk4::{Application, ApplicationWindow, DrawingArea};
     use gtk4_layer_shell::{Edge, Layer, LayerShell};
-    
+
+    gtk4::init().map_err(|e| anyhow::anyhow!("failed to initialize GTK: {}", e))?;
+
+    // GNOME/Mutter does not implement wlr-layer-shell. A regular window would take focus
+    // from the dictation target (breaking text injection), so skip the visual overlay and
+    // report state changes in the log instead.
+    if !gtk4_layer_shell::is_supported() {
+        tracing::warn!(
+            "Compositor does not support layer-shell (e.g. GNOME): status overlay disabled, state changes will be logged instead"
+        );
+        let mut last = None;
+        while let Ok(state) = rx.recv() {
+            if last != Some(state) {
+                tracing::info!(?state, "overlay state");
+                last = Some(state);
+            }
+        }
+        return Ok(());
+    }
+
     let app = Application::builder()
         .application_id("com.dpaiasr.overlay")
         .build();
@@ -93,7 +112,8 @@ fn run_ui_thread(rx: Receiver<OverlayState>) -> anyhow::Result<()> {
         // Use glib::timeout_add_local to periodically check the channel and redraw if needed
         gtk4::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
             if let Ok(rx) = rx_for_timer.lock() {
-                if let Ok(new_state) = rx.try_recv() {
+                // Drain the channel so a burst of updates doesn't lag behind the timer.
+                while let Ok(new_state) = rx.try_recv() {
                     let mut current = state_for_timer.lock().unwrap();
                     if *current != new_state {
                         *current = new_state;
@@ -105,6 +125,6 @@ fn run_ui_thread(rx: Receiver<OverlayState>) -> anyhow::Result<()> {
         });
     });
 
-    app.run();
+    app.run_with_args(&["dpaiasr-overlay"]);
     Ok(())
 }
