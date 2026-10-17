@@ -21,3 +21,9 @@
 .cargo/
 .agents/
 
+# Local logs and AI-tooling scratch files
+log.txt
+*.log
+.codex/
+.claude/
+skills-lock.json

@@ -1,6 +1,8 @@
+use super::portal::PortalKeyboard;
 use super::target::TargetSnapshot;
 use enigo::{Enigo, Keyboard, Settings};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,15 +20,19 @@ pub enum InjectError {
 ///
 /// Backend choice depends on the session type:
 /// - X11: `enigo` (XTest) types directly.
-/// - Wayland: `wtype` (wlroots virtual-keyboard protocol). `enigo` is deliberately not
+/// - Wayland: the XDG RemoteDesktop portal (GNOME, KDE; one-time permission dialog, no
+///   root), then `wtype` (wlroots virtual-keyboard protocol). `enigo` is deliberately not
 ///   used here because its X11 backend only reaches XWayland clients and would report
 ///   success while native Wayland windows receive nothing.
+/// - `ydotool` (kernel uinput, needs a running `ydotoold`): works on GNOME and any other
+///   compositor, assuming a US keyboard layout.
 /// - Fallback: put the text on the clipboard (and paste with Shift+Insert when a
 ///   keyboard backend exists). On compositors without synthetic input (e.g. GNOME)
 ///   the text is left on the clipboard and an error tells the user to paste manually.
 pub struct Injector {
     wayland: bool,
     enigo: Option<Enigo>,
+    portal: Option<PortalKeyboard>,
     /// Kept alive so the clipboard contents keep being served after `set_text`.
     clipboard: Option<arboard::Clipboard>,
 }
@@ -47,13 +53,28 @@ impl Injector {
             }
         };
 
-        if wayland {
-            tracing::info!("Wayland session: injecting via wtype, falling back to clipboard");
-        }
+        let portal = if wayland {
+            tracing::info!(
+                "Wayland session: requesting keyboard access through the desktop portal (approve the dialog if one appears)"
+            );
+            match PortalKeyboard::connect() {
+                Ok(p) => {
+                    tracing::info!("desktop portal keyboard access granted");
+                    Some(p)
+                }
+                Err(e) => {
+                    tracing::warn!("desktop portal keyboard unavailable ({:#}); trying wtype/ydotool/clipboard", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         Ok(Self {
             wayland,
             enigo,
+            portal,
             clipboard: None,
         })
     }
@@ -83,7 +104,21 @@ impl Injector {
             }
         }
 
+        if let Some(portal) = self.portal.as_ref() {
+            match portal.type_text(&to_type) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    tracing::warn!("portal typing failed ({:#}); falling back", e);
+                    self.portal = None;
+                }
+            }
+        }
+
         if Self::type_with_wtype(&to_type) {
+            return Ok(());
+        }
+
+        if Self::type_with_ydotool(&to_type) {
             return Ok(());
         }
 
@@ -104,6 +139,43 @@ impl Injector {
         }
     }
 
+    fn type_with_ydotool(text: &str) -> bool {
+        // The text goes over stdin so arbitrary content (e.g. a leading '-') is never parsed as a flag.
+        let child = Command::new("ydotool")
+            .args(["type", "--key-delay", "2", "--file", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn();
+        let mut child = match child {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!("ydotool not runnable ({}); is it installed?", e);
+                return false;
+            }
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            if stdin.write_all(text.as_bytes()).is_err() {
+                let _ = child.kill();
+                return false;
+            }
+        }
+        match child.wait_with_output() {
+            Ok(out) if out.status.success() => true,
+            Ok(out) => {
+                tracing::debug!(
+                    "ydotool failed (is ydotoold running and /dev/uinput accessible?): {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+                false
+            }
+            Err(e) => {
+                tracing::debug!("ydotool wait failed: {}", e);
+                false
+            }
+        }
+    }
+
     fn paste_via_clipboard(&mut self, text: &str) -> Result<(), InjectError> {
         if self.clipboard.is_none() {
             self.clipboard = arboard::Clipboard::new().ok();
@@ -119,7 +191,7 @@ impl Injector {
 
         let Some(enigo) = self.enigo.as_mut() else {
             let hint = if self.wayland {
-                "this Wayland compositor does not allow synthetic typing (GNOME has no virtual-keyboard protocol; install wtype on wlroots compositors)"
+                "this Wayland compositor does not allow synthetic typing (GNOME has no virtual-keyboard protocol; approve the desktop-portal keyboard permission, or install wtype on wlroots compositors)"
             } else {
                 "no keyboard backend is available"
             };
